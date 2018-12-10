@@ -43,7 +43,6 @@ Kyoto_Restaurant =Kyoto_Restaurant_raw %>%
     LunchPrice  = clean_price(LunchPrice) %>% as.factor()
   )
 
-class(Kyoto_Restaurant$SecondCategory)
 ```
 
 ```{r}
@@ -53,37 +52,42 @@ shinyApp(
     titlePanel(h4("Kyoto Restaurant")),
     sidebarLayout(
       sidebarPanel(
+        #Select Station
         selectInput("station", label = h5("Select the station closest to your ideal restaurant"),
                     choices = levels(Kyoto_Restaurant$Station)),
+        #Select First Food Category
         selectInput("first_category",label = h5("Select the food category"),
                     choices = levels(Kyoto_Restaurant$FirstCategory)),
-        checkboxInput("choose_second_category","Optional: select the second food category",value = FALSE),
+        #Select Second Food Category
+        checkboxInput("choose_second_category","Optional: select the second food category"),
         conditionalPanel(
           "input.choose_second_category == true",
           selectInput("second_category",label = h5("Select the second food cetegory"),
                       choices = levels(Kyoto_Restaurant$SecondCategory))),
-        radioButtons("Price_rough",label="Select the Price",
+        #Select Dinner Price
+        radioButtons("price_rough",label="Select the Price",
                      choices = list("￥","￥￥", "￥￥￥", "￥￥￥￥","￥￥￥￥￥")),
         conditionalPanel(
-          "input.Price_rough == '￥'",
+          "input.price_rough == '￥'",
           checkboxGroupInput("price_range1", label = h5("Select the price range(JPY)"),
                              choices = levels(Kyoto_Restaurant$DinnerPrice)[1:2])),
         conditionalPanel(
-          "input.Price_rough == '￥￥'",
+          "input.price_rough == '￥￥'",
           checkboxGroupInput("price_range2", label = h5("Select the price range(JPY)"), 
                              choices = levels(Kyoto_Restaurant$DinnerPrice)[c(5,7,9)])),
         conditionalPanel(
-          "input.Price_rough == '￥￥￥'",
+          "input.price_rough == '￥￥￥'",
           checkboxGroupInput("price_range3", label = h5("Select the price range(JPY)"), 
                              choices = levels(Kyoto_Restaurant$DinnerPrice)[10:12])),
         conditionalPanel(
-          "input.Price_rough == '￥￥￥￥'",
+          "input.price_rough == '￥￥￥￥'",
           checkboxGroupInput("price_range4", label = h5("Select the price range(JPY)"),
                              choices = levels(Kyoto_Restaurant$DinnerPrice)[3:4])),
         conditionalPanel(
-          "input.Price_rough == '￥￥￥￥￥'",
+          "input.price_rough == '￥￥￥￥￥'",
           checkboxGroupInput("price_range5", label = h5("Select the price range(JPY)"), 
                              choices = levels(Kyoto_Restaurant$DinnerPrice)[c(6,8)])),
+        #Add an Action Button
         actionButton("search", h5("Search"))
       ),
       mainPanel(
@@ -95,34 +99,40 @@ shinyApp(
   
   server = function(input, output, session){
     # Filter the restaurant, returning a data frame
-    restaurants = reactive({
+    restaurants = eventReactive(input$search,{
       #generate temp variables for input values
       station = input$station
       first_category = input$first_category
-      dinner_price = case_when(
-            input$Price_rough == "￥"~ input$price_range1,
-            input$Price_rough == "￥￥" ~input$price_range2,
-            input$Price_rough == "￥￥￥" ~input$price_range3,
-            input$Price_rough == "￥￥￥￥" ~input$price_range4,
-            input$Price_rough == "￥￥￥￥￥" ~input$price_range5)
-      dinner_rating = input$dinner_rating
+      second_category = input$second_category
+      rough_price = input$price_rough
+      if (rough_price == "￥" )
+        dinner_price = input$price_range1
+      if (rough_price == "￥￥")
+        dinner_price = input$price_range2
+      if (rough_price == "￥￥￥")
+        dinner_price = input$price_range3
+      if (rough_price =="￥￥￥￥")
+        dinner_price =input$price_range4
+      if (rough_price == "￥￥￥￥￥")
+        dinner_price = input$price_range5
+     # dinner_rating = input$dinner_rating
       
       # Apply filters
-      r <- Kyoto_Restaurant %>%
+      r = Kyoto_Restaurant %>%
         filter(
           Station == station,
           FirstCategory == first_category,
-          DinnerPrice == dinner_price,
-          DinnerRating == dinner_rating
-        )
+          DinnerPrice %in% dinner_price
+         # DinnerRating ==dinner_rating
+        ) %>% 
+        arrange()
       
       # Optional filter
       if (input$choose_second_category ==TRUE){
-        second_category = input$second_category
         r = r %>% 
-          filter(SecondCategory == second_category)
-      }
-      
+          filter(SecondCategory == second_category) %>% 
+          arrange()
+      } 
       r = as.data.frame(r)
    })
   

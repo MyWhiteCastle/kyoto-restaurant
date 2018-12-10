@@ -1,0 +1,347 @@
+---
+title: "Sta 523 - Homework 6"
+author: [Haohan Chen, Lingyun Shao, Luman Huang, Xinghong Tang]
+output: rmarkdown::html_document
+runtime: shiny
+---
+
+### Setup
+
+```{r, message=FALSE, warning=FALSE}
+# Load any necessary packages here
+
+# Install packages if necessary
+pkgs = c("plotly", "grid", "leaflet", "shinythemes")
+for (pkg in pkgs){
+  if (!(pkg %in% installed.packages()[, 1])){
+    install.packages(pkg)
+  }
+}
+
+# Load packages
+library(rvest)
+library(stringr)
+library(purrr)
+library(plyr)
+library(dplyr)
+library(jsonlite)
+library(shiny)
+library(ggplot2)
+library(plotly)
+library(tidyr)
+library(grid)
+library(leaflet)
+library(shinythemes)
+```
+
+<br/><br/>
+
+### Task 1 - Getting data from Dark Sky
+
+<!-- Include your write up here and or below -->
+Task 1 is to write a function which can get data from Dark Sky API. The function incurs four parameters, including key, latitude, longitude and date. Date has 3 formats, NULL, string formats and UNIX time formats. We use different methods to process different type of date conditionally. Then request data from API and convert JSON into dataframe. Then we tidied the names of variables with stringr functions.
+
+```{r}
+get_darksky = function(key, lat, long, date = NULL) {
+  if (is.null(date) == TRUE) {
+      dataset = fromJSON(paste0("https://api.darksky.net/forecast/", key,"/", lat,",", long, "?exclude=currently,daily,minutely,alerts,flags&units=si")) %>% as.data.frame()
+  } else {
+    if (is.character(date) == TRUE) { # deal with format like "YYYY/MM/DD"
+      date_int = map(-2:1, ~paste0(as.Date(date) + ., "T00:00:00")) %>% unlist()
+    } else {  # deals with format of Unix timestamp
+      date_int = map(-2:1, function(x) date + x *24*60*60)
+    }
+    fj = function(t) {
+      fromJSON(paste0("https://api.darksky.net/forecast/", key,"/", lat,",", long, ",", t, "?exclude=currently,daily,minutely,alerts,flags&units=si")) %>% as.data.frame()
+    }
+    dataset = rbind.fill(map(date_int, fj))
+  } 
+
+  dataset %>%
+    names() %>%
+    str_remove_all('hourly\\.data\\.') %>% # tidy variable names
+    gsub("([[:lower:]])([[:upper:]][[:lower:]])", "\\1 \\2", .) %>% 
+    str_to_title() %>%
+    set_names(dataset, .) %>% # change variable names
+    select(-Latitude, -Longitude, -Offset) %>%
+    mutate(
+      datetime = as.POSIXct(Time, origin="1970-01-01", tz = as.character(Timezone[1]))
+    ) %>%
+    select(-Time)
+}
+```
+
+
+<br/><br/>
+
+### Task 2 - Prediction Locations
+
+<!-- Include your write up here and or below -->
+Task 2 is to practice scrapping data using rvest and cleaning up data using regular expression of stringr. 
+
+First, we set our target url. The wanted nodes are obtained by turning off Javascript and rule out the unwanted tables.
+The raw table contains 311 rows and 8 columns of features. 
+
+Secondly, several helper functions are defined to deal with the following issues:
+1. extract characters for city and state columns
+2. get rid of comma in the numbers
+3. deal with negative sign expression
+4. extract numbers and get rid of units and percentage sign
+
+Thirdly, clean up the data by doing the following:
+1. select the rows based on the condition that population of 2010 census is larger than 500000
+2. convert character to number
+3. separate location into latitude and longitude
+
+```{r}
+# Get url
+URL = "https://en.wikipedia.org/wiki/List_of_United_States_cities_by_population"
+PAGE = read_html(URL)
+
+#raw data frame
+us_locs_raw = data_frame(
+  city                     = html_nodes(PAGE,"p+ .sortable td:nth-child(2)") %>% html_text(),
+  state                    = html_nodes(PAGE,"p+ .sortable td:nth-child(3)") %>% html_text(),
+  estimate_2017            = html_nodes(PAGE,"p+ .sortable td:nth-child(4)") %>% html_text(),
+  census_2010              = html_nodes(PAGE,'p+ .sortable td:nth-child(5)') %>% html_text(),
+  'change(%)'              = html_nodes(PAGE,"p+ .sortable td:nth-child(6)") %>% html_text(),
+  'land_area_2016(km2)'    = html_nodes(PAGE,"p+ .sortable td:nth-child(8)") %>% html_text(),
+  'pop_density_2016(/km2)' = html_nodes(PAGE,"p+ .sortable td:nth-child(10)")%>% html_text(),
+  location                 = html_nodes(PAGE,"p+ .sortable td:nth-child(11)")%>% html_text() 
+)
+
+# helper functions to clean up the raw data
+# get rid of subscription, newline escape charater and whitespace in the city and state columns
+clean_char =function(c){
+  str_replace_all(c,"\\[\\d+\\]|\\n","") %>%
+    str_trim()
+}
+# get rid of commas in numbers
+clean_comma = function(c){
+  str_replace_all(c,",","")
+}
+# get rid of percent signs in change
+clean_change =function(c){
+  str_extract(c,"\\+\\d+\\.\\d+|\\−\\d+\\.\\d+") %>% 
+    str_replace("\\−","\\-")
+}
+# get rid of commas and units in land_area_2016 and pop_density_2016
+clean_number =function(c){
+  clean_comma(c) %>% 
+    str_extract("\\d+\\.\\d|\\d+")
+}
+# extract formatted location information
+clean_location =function(c){
+  str_extract(c,"\\d+\\.\\d+\\;\\s\\-\\d+\\.\\d+")
+}
+
+#clean up data frame
+us_locs = us_locs_raw %>%
+  mutate(census_2010 = as.numeric(clean_comma(census_2010))) %>% 
+  filter(census_2010,census_2010>500000) %>% 
+  mutate(city = clean_char(city)) %>% 
+  mutate(state = clean_char(state)) %>% 
+  mutate(estimate_2017 = as.numeric(clean_comma(estimate_2017))) %>%
+  mutate(`change(%)`= as.numeric(clean_change(`change(%)`))) %>% 
+  mutate(`land_area_2016(km2)` = as.numeric(clean_number(`land_area_2016(km2)`)))%>% 
+  mutate(`pop_density_2016(/km2)` = as.numeric(clean_number(`pop_density_2016(/km2)`))) %>% 
+  mutate(location = clean_location(location)) %>% 
+  separate(location,c("latitude","longitude"),sep = ";") %>% 
+  mutate(latitude = as.numeric(latitude),longitude = as.numeric(longitude)) 
+```
+
+ 
+ <br/><br/>
+
+### Task 3 - Shiny Predictions
+
+
+Below we describe our design of the Shiny APP:
+
+- **UI**: We use a two-page navigation bar design to show both the `Visualization` and the `Data` we are using.
+    - On the `Visualization` page, we used fluid row design and allow the user to make 3 inputs:
+        - The city ("New York" as default)
+        - The date (a check box to choose a date and setting the current date as default if not choosing a date)
+        - The indicator of interest beyond temperature
+    - Also we included Geo-Location information of the city selected
+        - The longitude and the latitude of the city queried
+        - A map of the chosen city.
+    - The result of visualization is shown below using a line to show the trend of selected weather quantities.
+    
+- **Server**: We use the following functions to collect and present the data
+    - `GetGeo`: Get longitude and latitude of the queried city
+    - `GetWeather`: Call the function `get_darksky()` to acquire weather information of the queried city around the queried time
+    - `GetIndicators`: Get different possible indicators based on the data returned by API of each city and date. Indicators with more than 50% missingness are removed since the result is terribly ineffective.
+    - `PreparePlot`: Reshape the collected data of whether with `dplyr`. We select Temperature and the user-specified indicator and combine them by row, which will be input of `ggplot`
+    - `plotWeather`: Render a figure with or without faceting. When facted, the top panel plots the temperature; The bottom panel plots the user-selected indicator.
+- **Aside**
+    - We custimize the size of the Shiny frame using CSS code `<style type="text/css">.shiny-frame{width: 100%;height: 1200px;}</style>`
+    - We used `leaflet` to get a map based on the latitude and longitude of the selected city, which will help we know the geographical location of that city. A weather forecasting map was considered. But we chose not to use that since changing the map for each time we select a new date is too time and memory-consuming.
+    - We used some shiny UI setting like `fluidRow`, `navbarPage` and `shinytheme` to make our app more clean and polished.
+    - We applied `ggplotly` to each ggplot we have and made them interactive. By putting the cursor onto each point, we can get the detailed information for that data point.
+    - For the temperature plot alone, we used a spectral color template to show the relative high or low temperature in that particular time interval selected.
+
+
+<style type="text/css">
+.shiny-frame{
+  width: 100%;
+  height: 1200px;
+}
+</style>
+
+<br>
+<br>
+<br>
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+key = '9138087d17fc11b7065d503983379467'
+key_backup = "fc95903dc2690ae6068b227f50487c6e"
+
+shinyApp(
+  ui = fluidPage(
+    theme = shinytheme('flatly'),
+    
+    navbarPage(
+      title = "Dark Sky Weather Forecast",
+      id = 'nav',
+      tabPanel('Visualization', value = 'Visualization',
+               fluidRow(
+                 column(5,
+                        selectInput("City", h4("Choose a city"), choices = us_locs$city[order(us_locs$city)], selected = 'New York'),
+                        checkboxInput("choose_date", "Choose a Date", value=FALSE),
+                        conditionalPanel(
+                          "input.choose_date == true",
+                          dateInput("Date", h4("Choose a Date"), value = NULL)
+                        ),
+                        
+                        selectInput("Indicator", label = h4("Choose an Indicator beyond Temperature"), choices = 'None', selected = 'None')
+                        ),
+                 column(7, h4("Geo-Location"), 
+                        leafletOutput("leaf", width = "100%", height = 240),
+                        tableOutput("geo")
+                        )
+                 ),
+               fluidRow(
+                 column(12, h3("Hourly Weather Information"), h6('Note: Quantities are based on International System of Units.'),
+                        plotlyOutput("plotWeather", width = "100%", height = 600))
+                 )
+               ),
+      tabPanel('Data', value = 'Data',
+               fluidRow(
+                 column(2),
+                 column(7, tableOutput("data")),
+                 column(3)
+                 )
+               )
+      )
+  ),
+  
+  server = function(input, output, session) 
+  {   
+    # get geographical info
+    GetGeo <- reactive(
+      us_locs %>% filter(city == input$City) %>% select(latitude, longitude)
+    )
+    
+    # get data from API
+    GetWeather <- reactive(
+      with(GetGeo(),
+        get_darksky(key = key, 
+                    lat = latitude, 
+                    long = longitude, 
+                    date = as.character(input$Date))
+        )
+      )
+    
+    # update choices of indicators
+    observe({
+      # get all numeric variables' names to be chosen
+      GetIndicators <- reactive(
+        GetWeather() %>% 
+          # only include variables with less than 50% NA's, too many NA's lead to ineffective visualization
+          select_if(function(x) mean(is.na(x))<0.5) %>%
+          select(-Temperature) %>%
+          map_lgl(is.numeric) %>%
+          subset(., .==TRUE) %>%
+          names() %>%
+          c('None', .)
+      )
+
+
+      # Update the choices for different returned variables per date
+      updateSelectInput(session, "Indicator",
+                        label = "Choose an Indicator beyond Temperature",
+                        choices = GetIndicators(),
+                        selected = input$Indicator
+                        )
+    })
+    
+    # get data.frame for ggplot
+    PreparePlot <- reactive({
+      prep.dt = GetWeather() %>%
+        select(one_of(c("datetime", "Temperature"))) %>% 
+        setNames(c("Time", "Data")) %>%
+        mutate(Ind = "Temperature (°C)")
+      if(input$Indicator == 'None') {
+        prep.dt
+      } else {
+        prep.dt %>% 
+        bind_rows(
+        GetWeather() %>%
+          select(one_of(c("datetime", input$Indicator))) %>%
+          setNames(c("Time", "Data")) %>%
+          mutate(Ind = input$Indicator)
+        ) %>%
+          mutate(Ind = factor(Ind, levels = c("Temperature (°C)", input$Indicator))) 
+      }
+    })
+    
+    # output table of long and lat table
+    output$geo <- renderTable({GetGeo()}, width = '100%')
+
+    # output table of data we used in the visualization
+    output$data <- renderTable({
+      PreparePlot() %>%
+        spread(Ind, Data) %>%
+        mutate(Time = as.character(Time))
+    }, width = '100%')
+    
+    # output of visualization
+    output$plotWeather <- renderPlotly({
+      if(input$Indicator == 'None') {
+        p = PreparePlot() %>%
+          ggplot(aes_string(x = 'Time', y = 'Data', color = 'Data')) +
+          geom_segment(aes(x = Time, xend=lead(Time), y = Data, yend=lead(Data))) +
+          geom_point(size = 0.5) +
+          facet_wrap( ~ Ind, scales = "free_y", nrow = 1) +
+          theme(legend.position="none", axis.title.y=element_blank(), text = element_text(size=16)) +
+          ggtitle(paste0("Weather Forecast of ", input$City)) +
+          scale_color_distiller("Temperature", palette = "Spectral")
+      } else {
+        dt = PreparePlot()
+        p = dt %>%
+          ggplot(aes_string(x = "Time", y = "Data", color = "Ind")) +
+          facet_wrap( ~ Ind, scales = "free_y", nrow = 2) +
+          geom_line() +
+          theme(legend.position="none", axis.title.y=element_blank(), text = element_text(size=16)) +
+          ggtitle(paste0("Weather Forecast of ", input$City)) +
+          scale_color_brewer(palette = 'Set1') +
+          theme(panel.spacing = unit(2, "lines"))
+      }
+
+      ggplotly(p)
+
+    })
+    
+    # adding leaflef map of the selected city
+    output$leaf = renderLeaflet({
+      with(GetGeo(),
+          leaflet(data = GetGeo()) %>%
+            setView(lng = longitude, lat = latitude, zoom = 10) %>%
+            addTiles() %>%
+            addMarkers(~longitude, ~latitude, popup = input$City)
+           )
+    })
+  }
+)
+```

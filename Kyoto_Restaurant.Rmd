@@ -34,32 +34,63 @@ clean_price = function(price){
     str_replace("^ -","0-") %>% 
     str_replace("30000-","30000+")
 }
+#clean_category =function(category){
+#  category = category %>% 
+#    str_replace("Bistro","Bar") %>%
+#    str_replace("Beer","Beer Bar") %>%
+#    str_replace("Beer\\sBar","Beer Bar") %>%
+#    str_replace("Beer\\sgarden","Beer Bar")%>%
+#    str_replace("Café / coffee shop (and others)","Cafe") %>% 
+#    str_replace("Traditional Café","Cafe") %>%
+#    str_replace("Champon Noodle","Ramen") %>% 
+#    str_replace("Chinese","Chinese") %>% 
+#    str_replace("Chinese hot pot / fire pot", "Chinese hot pot") %>% 
+#    str_replace("Dandan noodles","Chinese") %>% 
+#    str_replace("Dumplings","Chinese") %>% 
+#    str_replace("Genghis Khan (BBQ Rum)","hot pot") %>% 
+#    str_replace("Horumo\\s(BBQ Offel)","Japanese BBQ") %>% 
+#    str_replace("Izakaya\\s(other)", "Izakaya (Tavern)") %>% 
+#    str_replace("Korean\\scuisine","Korea") %>% 
+#    str_replace("Modern\\sFrench","French") %>% 
+#    str_replace("Motsu Nabe (Offel Hot Pot)","Hot Pot") %>% 
+#    str_replace("Pork\\s","") %>% 
+#    str_replace(" (Japanese Steamboat)","") %>% 
+#    str_replace("Stand\\sBar", "Bar") %>% 
+#    str_replace("Standing\\sstyle\\ss","S") %>% 
+#    str_replace("Sukiyaki","Japanese hot pot") %>% 
+#    str_replace("Thailand\\scooking", "Thailand") %>% 
+#    str_replace("Udon\\sSuki","Udon") %>% 
+#    str_replace("Western\\s(Others)","Western") %>% 
+#    str_replace("Western\\sCuisine","Western") %>% 
+#    str_replace("Western\sFood\\s(Other)","Western") %>% 
+#    str_replace("Wine\\sbar","Bar")
+#}
 
 Kyoto_Restaurant =Kyoto_Restaurant_raw %>% 
   mutate(
     Station = as.factor(Station),
     FirstCategory = as.factor(FirstCategory),
     SecondCategory = as.factor(SecondCategory),
+    Category = FirstCategory %>% as.factor(),
     DinnerPrice = clean_price(DinnerPrice) %>% as.factor(),
-    LunchPrice  = clean_price(LunchPrice) %>% addNA() %>% as.factor()
-  )
+    LunchPrice  = clean_price(LunchPrice) %>% addNA() %>% as.factor())
 
-
+levels(Kyoto_Restaurant$Category)
 ```
 
 ```{r}
 shinyApp(
   ui = fluidPage(
-    theme = shinytheme('flatly'),
+    theme = shinytheme('united'),
     titlePanel(h4("Kyoto Restaurant")),
     sidebarLayout(
       sidebarPanel(
         #Select Station
         pickerInput("station", h5("Select the station closest to your ideal restaurant"),
                     choices = levels(Kyoto_Restaurant$Station),options = list(`actions-box` = TRUE),multiple = TRUE),
-        #Select First Food Category
-        selectInput("first_category",label = h5("Select the food category"),
-                    choices = levels(Kyoto_Restaurant$FirstCategory),multiple = TRUE),
+        #Select Food Category
+        selectInput("category",label = h5("Select the food category"),
+                    choices = levels(Kyoto_Restaurant$Category),multiple = TRUE),
         #Select Second Food Category
         checkboxInput("choose_second_category","Optional: select the second food category"),
         conditionalPanel(
@@ -137,7 +168,7 @@ shinyApp(
     restaurants = eventReactive(input$search,{
       ## Generate temp variables for input values
       station = input$station
-      first_category = input$first_category
+      category = input$category
       second_category = input$second_category
       
       rough_price = input$price_rough
@@ -168,14 +199,14 @@ shinyApp(
       rd = Kyoto_Restaurant %>% 
         filter(
           Station %in% station,
-          FirstCategory %in% first_category,
+          Category %in% category,
           DinnerPrice %in% dinner_price,
           DinnerRating >=dinner_rating) 
       
       rl = Kyoto_Restaurant %>% 
         filter(
           Station %in% station,
-          FirstCategory %in% first_category,
+          Category %in% category,
           LunchPrice %in% lunch_price,
           LunchRating >=lunch_rating) 
       

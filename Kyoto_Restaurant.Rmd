@@ -3,7 +3,7 @@ title: "kyoto restaurant"
 output: html_document
 ---
 ```{r}
-pkgs = c("units","lucr","shinyWidgets","leaflet")
+pkgs = c("units","lucr","shinyWidgets","xml2","leaflet","htmltools")
 for (pkg in pkgs){
   if (!(pkg %in% installed.packages()[, 1])){
     install.packages(pkg)
@@ -18,6 +18,8 @@ library(shiny)
 library(shinythemes)
 library(shinyWidgets)
 library(leaflet)
+library("xml2")
+library(htmltools)
 ```
 
 Load CSV File 
@@ -227,19 +229,21 @@ shinyApp(
           arrange()}
       r = as.data.frame(r)
    })
-  
+    
+    #Set output of a restaurant table
     output$restaurant = renderTable({
       output_restaurants = restaurants() %>% 
         select(Name,JapaneseName,DinnerPrice,LunchPrice)
       })
-    output$leaf = renderLeaflet({leaflet(data = restaurants()) %>%
-                              setView(lng = restaurants()[1,]$Long, 
-                                      lat = restaurants()[1,]$Lat, 
-                                      zoom = 15) %>%
-                              addTiles() %>%
-                              addMarkers(restaurants()$Long, 
-                                         restaurants()$Lat, 
-                                         popup = restaurants()$Name)})
+    #Set output of a map indicating the selected restaurants
+    ##setView makes the argument as the center point of the map, so may adjustable to change
+    ##adjust the exhibiting size of the map if possible
+    ##need set links between the restaurants and the markers
+    output$leaf = renderLeaflet({
+      leaflet(restaurants()) %>%
+        setView(lng = restaurants()[1,14], lat = restaurants()[1,13],zoom = 50) %>% 
+        addTiles() %>%
+        addMarkers(~Long, ~Lat, label = ~Name)})
     
   }
 )

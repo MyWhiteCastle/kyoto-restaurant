@@ -239,6 +239,8 @@ shinyApp(
     ##setView makes the argument as the center point of the map, so may adjustable to change
     ##adjust the exhibiting size of the map if possible
     ##need set links between the restaurants and the markers
+    ##if there is no restaurants matching the parameters, it will show nothing for the table
+    ##however, since it's empty, it will indicate error for the map
     output$leaf = renderLeaflet({
       leaflet(restaurants()) %>%
         setView(lng = restaurants()[1,14], lat = restaurants()[1,13],zoom = 50) %>% 

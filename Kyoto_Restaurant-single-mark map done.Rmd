@@ -1,0 +1,168 @@
+---
+title: "kyoto restaurant"
+output: html_document
+---
+```{r}
+pkgs = c("units","lucr","leaflet")
+for (pkg in pkgs){
+  if (!(pkg %in% installed.packages()[, 1])){
+    install.packages(pkg)
+  }
+}
+
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(units)
+library("lucr")
+library(shiny)
+library(shinythemes)
+library(leaflet)
+library(knitr)
+```
+
+Load CSV File 
+```{r}
+Kyoto_Restaurant_raw = read.csv("Kyoto_Restaurant_Info.csv")
+```
+
+Clean Data
+```{r}
+#function
+## clean function
+clean_price = function(price){
+  str_remove_all(price,"￥") %>% 
+    str_replace("～","-") %>% 
+    str_replace("^ -","0-") %>% 
+    str_replace("30000-","30000+")
+}
+
+Kyoto_Restaurant =Kyoto_Restaurant_raw %>% 
+  mutate(
+    Station = as.factor(Station),
+    FirstCategory = as.factor(FirstCategory),
+    SecondCategory = as.factor(SecondCategory),
+    DinnerPrice = clean_price(DinnerPrice) %>% as.factor(),
+    LunchPrice  = clean_price(LunchPrice) %>% as.factor()
+  )
+leaflet() %>%
+  addTiles() %>%
+  setView(lng = 135.77, lat = 35.01, zoom = 15) %>%
+  addMarkers(lng=135.77, lat=35.01 ,popup = "CC")
+
+```
+
+```{r}
+shinyApp(
+  ui = fluidPage(
+    theme = shinytheme('flatly'),
+    titlePanel(h4("Kyoto Restaurant")),
+    sidebarLayout(
+      sidebarPanel(
+        #Select Station
+        selectInput("station", label = h5("Select the station closest to yo
+        																	ur ideal restaurant"),
+                    choices = levels(Kyoto_Restaurant$Station), selected="Sanjo"),
+        #Select First Food Category
+        selectInput("first_category",label = h5("Select the food category"),
+                    choices = levels(Kyoto_Restaurant$FirstCategory)), selected= "Izakaya (Tavern)",
+        #Select Second Food Category
+        checkboxInput("choose_second_category","Optional: select the second food category"),
+        conditionalPanel(
+          "input.choose_second_category == true",
+          selectInput("second_category",label = h5("Select the second food cetegory"),
+                      choices = levels(Kyoto_Restaurant$SecondCategory))),
+        #Select Dinner Price
+        radioButtons("price_rough",label="Select the Price",
+                     choices = list("￥","￥￥", "￥￥￥", "￥￥￥￥","￥￥￥￥￥")),
+        conditionalPanel(
+          "input.price_rough == '￥'",
+          checkboxGroupInput("price_range1", label = h5("Select the price range(JPY)"),
+                             choices = levels(Kyoto_Restaurant$DinnerPrice)[1:2])),
+        conditionalPanel(
+          "input.price_rough == '￥￥'",
+          checkboxGroupInput("price_range2", label = h5("Select the price range(JPY)"), 
+                             choices = levels(Kyoto_Restaurant$DinnerPrice)[c(5,7,9)])),
+        conditionalPanel(
+          "input.price_rough == '￥￥￥'",
+          checkboxGroupInput("price_range3", label = h5("Select the price range(JPY)"), 
+                             choices = levels(Kyoto_Restaurant$DinnerPrice)[10:12])),
+        conditionalPanel(
+          "input.price_rough == '￥￥￥￥'",
+          checkboxGroupInput("price_range4", label = h5("Select the price range(JPY)"),
+                             choices = levels(Kyoto_Restaurant$DinnerPrice)[3:4])),
+        conditionalPanel(
+          "input.price_rough == '￥￥￥￥￥'",
+          checkboxGroupInput("price_range5", label = h5("Select the price range(JPY)"), 
+                             choices = levels(Kyoto_Restaurant$DinnerPrice)[c(6,8)])),
+        #Add an Action Button
+        actionButton("search", h5("Search"))
+      ),
+      mainPanel(
+        tableOutput("restaurant"),
+        leafletOutput("leaf", width = "70%", height = 360)
+      )
+    )
+  ),
+  
+  
+  server = function(input, output, session){
+    # Filter the restaurant, returning a data frame
+    restaurants = eventReactive(input$search,{
+      #generate temp variables for input values
+      station = input$station
+      first_category = input$first_category
+      second_category = input$second_category
+      rough_price = input$price_rough
+      if (rough_price == "￥" )
+        dinner_price = input$price_range1
+      if (rough_price == "￥￥")
+        dinner_price = input$price_range2
+      if (rough_price == "￥￥￥")
+        dinner_price = input$price_range3
+      if (rough_price =="￥￥￥￥")
+        dinner_price =input$price_range4
+      if (rough_price == "￥￥￥￥￥")
+        dinner_price = input$price_range5
+     # dinner_rating = input$dinner_rating
+      
+      # Apply filters
+      r = Kyoto_Restaurant %>%
+        filter(
+          Station == station,
+          FirstCategory == first_category,
+          DinnerPrice %in% dinner_price
+         # DinnerRating ==dinner_rating
+        ) %>% 
+        arrange()
+      
+      # Optional filter
+      if (input$choose_second_category ==TRUE){
+        r = r %>% 
+          filter(SecondCategory == second_category) %>% 
+          arrange()
+      } 
+      r = as.data.frame(r)
+   })
+  
+    output$restaurant = renderTable({
+      output_restaurants = restaurants() %>% 
+        select(Name,Lat,Long)
+      })
+    
+    output$leaf = renderLeaflet(leaflet(data = restaurants()) %>%
+                                  setView(lng = restaurants()[1,]$Long, 
+                                          lat = restaurants()[1,]$Lat, 
+                                          zoom = 15) %>%
+                                  addTiles() %>%
+                                  addMarkers(restaurants()$Long, 
+                                             restaurants()$Lat, 
+                                             popup = restaurants()$Name)
+           )
+  
+    }
+)
+```
+
+
+

@@ -164,6 +164,7 @@ shinyApp(
       ),
       mainPanel(
         leafletOutput("leaf", width = "100%", height = 240),
+        uiOutput("links"),
         tableOutput("restaurant")
       )
     )
@@ -230,11 +231,12 @@ shinyApp(
       r = as.data.frame(r)
    })
     
-    #Set output of a restaurant table
-    output$restaurant = renderTable({
-      output_restaurants = restaurants() %>% 
-        select(Name,JapaneseName,DinnerPrice,LunchPrice)
-      })
+    contents = eventReactive(input$search,{
+      content = restaurants() %>% 
+        mutate(name = paste(sep = "<br/>",JapaneseName,Name))}
+    )
+    
+    
     #Set output of a map indicating the selected restaurants
     ##setView makes the argument as the center point of the map, so may adjustable to change
     ##adjust the exhibiting size of the map if possible
@@ -245,8 +247,58 @@ shinyApp(
       leaflet(restaurants()) %>%
         setView(lng = restaurants()[1,14], lat = restaurants()[1,13],zoom = 50) %>% 
         addTiles() %>%
-        addMarkers(~Long, ~Lat, label = ~Name)})
+        addMarkers(~Long, ~Lat, popup = paste(restaurants()$JapaneseName, "<br>",
+                                              restaurants()$Name, "<br>",
+                                              "Nearby Station:",restaurants()$Station, "<br>",
+                                              "Details"))})
     
+    state = reactiveValues(
+      observers = list()
+    )
+    
+    observeEvent(input$search, {
+      
+      # Destroy existing observers
+      for(i in seq_along(state$observers)) {
+        state$observers[[i]]$destroy()
+      }
+      
+      #Assign headlines to the links
+      ui_elems = map(
+        seq_len(nrow(restaurants())), function(i) fluidRow(actionLink(paste0("link",i),restaurants()[i,3]))
+      )
+      output$links = renderUI(fluidPage(ui_elems))
+      
+      # Reset and create new observers for each of our links
+      state$observers = map(
+        seq_len(nrow(restaurants())), 
+        function(i) {
+          label = paste0("link",i)
+          observeEvent(
+            input[[label]], 
+            { #create modal dialog
+              showModal(modalDialog(
+                tags$header(h4(restaurants()[i,3])),
+                tags$div(
+                  tags$b(restaurants()[i,2]),
+                  tags$br(),
+                  tags$b("Station nearby"),
+                  tags$div(restaurants()[i,4])),
+                easyClose = TRUE))
+              #print the presse link
+              cat("You clicked link ", i,"!\n",sep="")
+            }, 
+            ignoreInit = TRUE
+          )
+        }
+      )
+    })
+    
+    #Set output of a restaurant table
+    output$restaurant = renderTable({
+      output_restaurants = restaurants() %>% 
+        select(Name,JapaneseName,DinnerPrice,LunchPrice)
+      })
   }
 )
 ```

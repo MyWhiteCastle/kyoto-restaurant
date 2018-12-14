@@ -1,0 +1,258 @@
+---
+title: "Sta 523 - Midterm 2 - Fall 2018"
+output: rmarkdown::html_document
+runtime: shiny
+---
+Due Friday December 7th by 11:59 pm
+
+<br/>
+
+### Rules
+
+Review all of the rules detailed in `README.md`, if you have any questions please direct them to myself or the TAs.
+
+<br/>
+
+### Setup
+```{r, message=FALSE, warning=FALSE}
+# Load any necessary packages here
+# Install packages if necessary
+pkgs = c("shinythemes","lubridate")
+for (pkg in pkgs){
+  if (!(pkg %in% installed.packages()[, 1])){
+    install.packages(pkg)
+  }
+}
+# Load packages
+library(rvest)
+library(stringr)
+library(purrr)
+library(plyr)
+library(dplyr)
+library(jsonlite)
+library(shiny)
+library(tidyr)
+library(shinythemes)
+library(lubridate)
+```
+
+
+### Task 1 (20 pts) - Figuring out the NY Times Article Search API
+
+<!-- sample url -->
+```
+library(httr)
+https://api.nytimes.com/svc/search/v2/articlesearch.json?fq=print_page:(1),document_type:(article)&begin_date=20180613&end_date=20180613&api-key=f28540bbe91e413c8dbb82df0636f7e9
+```
+
+* `fq=` -print_page:(1),document_type:(article)
+
+To filter the documents based on two keys (print page:("1") and document type:("article")), use comma to separate the two keys. Also, "print_page" should come first; otherwise, it would also include documents with print page equals values other than 1.
+
+* `begin_date=` -20180613
+* `end_date=` -20180613
+
+`begin_date` and `end_date` are in the format of YYYYMMDD. According to the official documentation of NY times Article Search, same date values are assigned to these two parameters to obtain documents on a specific day.
+
+* `page=` -
+
+for Task 1, we don't need `page` parameter. However, we do need this parameter in Task 2 and 3 to obtain all documents.
+
+* `API_key=`-f28540bbe91e413c8dbb82df0636f7e9
+
+<br/>    
+
+### Task 2 (40 pts) - Getting data from the NY Times Article Search API
+`as_date_type` is a function to convert the input date as date type.
+`get_API_raw` is a function that get the NY Times url that can get maximum 10 articles on front page on a specific day and return as a JSON file.
+`data_frame_clean_up` is a function that it first extracts the wanted metadata (headline, author, web url,total 10 features) in a dataframe and then clean them up. 
+`get_my_archive` is a function that 
+-check the length of input year,month and day is 1
+-check the date validation
+-check the invalid 2-digit year input
+-find how many urls we need to get to gather all documents
+-use a for loop to get all metadata of documents 
+
+```{r}
+#function definition
+## function - convert the date input to date type
+as_date_type = function(year,month,day){
+  paste0(year,"/",month,"/",day) %>% 
+    as.Date("%Y/%m/%d") 
+}
+
+## function - obtain raw metadata from URL
+get_API_raw = function(date_YYYYMMDD,api_key,Page){
+  url=paste0(
+    "https://api.nytimes.com/svc/search/v2/articlesearch.json?",
+    "fq=print_page:(1),",
+    "document_type:(article)",
+    paste0("&begin_date=",date_YYYYMMDD),
+    paste0("&end_date=",date_YYYYMMDD),
+    paste0("&page=",Page),
+    paste0("&api-key=",api_key))
+  
+  fromJSON(url)
+}
+
+## function - form a cleaned-up data frame
+data_frame_clean_up = function(List){
+  #form a data frame
+  metadata = data_frame(
+    headline =List[["response"]][["docs"]][["headline"]][["print_headline"]],
+    author = List[["response"]][["docs"]][["byline"]][["original"]],
+    web_url = List[["response"]][["docs"]][["web_url"]],
+    source = List[["response"]][["docs"]][["source"]],
+    pub_date =List[["response"]][["docs"]][["pub_date"]],
+    document_type =List[["response"]][["docs"]][["document_type"]],
+    type_of_material = List[["response"]][["docs"]][["type_of_material"]],
+    word_count =List[["response"]][["docs"]][["word_count"]],
+    lead_paragraph=List[["response"]][["docs"]][["snippet"]],
+    image_urls = List[["response"]][["docs"]][["multimedia"]] %>% map("url"))
+  
+  #clean the data frame
+  metadata = metadata %>% 
+    mutate(
+      author = str_remove(author,"By "),
+      pub_date = str_extract(pub_date,"\\d+\\-\\d+\\-\\d+"),
+      image_urls =sapply(image_urls, `[[`, 1))
+}
+
+## function - get metadata from NY times Article Search API
+get_my_archive = function(year, month, day, api_key) {
+  #length checking
+  if (length(year)!=1 | length(month) !=1 | length(day)!=1){
+    print("Only one value of year, month or day could be entered")
+    return()}
+  
+  #Date Validation 
+  date_input = as_date_type(year,month,day)
+  if (is.na(date_input)){
+    print("Invalid Date Input")
+    return()}
+  
+  date_yyyymmdd =as.character(date_input,"%Y%m%d")
+  #2-digit year input checking
+  if (nchar(date_yyyymmdd)!=8){
+    print("Invalid Year Format")
+    return()}
+  
+  #find the page number 
+  raw_0= get_API_raw(date_yyyymmdd,api_key,0)
+  hits=raw_0[["response"]][["meta"]][["hits"]]
+  loop=hits %/% 10
+  
+  #get a data frame containing metadata of all desired documents 
+  if (loop==0)
+    return(df = data_frame_clean_up(raw_0))
+  else{
+    for (i in 0:loop){
+      if (i ==0)
+        df= data_frame_clean_up(raw_0)
+      else {
+        df_i= get_API_raw(date_yyyymmdd,api_key,i) %>% 
+          data_frame_clean_up()
+        df=rbind(df,df_i)
+      }
+      Sys.sleep(0.5)
+    }
+    return(df)
+  }
+}
+
+```
+
+<br/>
+
+### Task 3 (40 pts) - Shiny Front End
+- **UI**: 
+    - On the `sidebar` panel, we allow the user to make 2 inputs:
+        - The date (a check box to choose a date and setting my 22th B-day as default if not choosing a date)
+        - The API key (my API key is provided as default)
+    - On the `main` panel, we have 1 output:
+        - The headlines shown as hyperlinks
+    
+- **Server**: 
+    - `GetAllMetadata`: Call `get_my_archive` function to gather all metadata of documents.
+    - `modaldiaglog`: `modaldialog`  is inserted in the part when we call the links as labels. It contains several html tags to present the features from `GetAllMetadata`. When the hyperlink is pressed, the modal dialog is popped up and when the web url in the modal dialog is pressed, it leads us to the new window in the browser.
+```{r}
+shinyApp(
+  ui = fluidPage(
+    theme = shinytheme('flatly'),
+    titlePanel(h4("NYTimes API")),
+    sidebarLayout(
+      sidebarPanel(
+        dateInput("date", h5("Select a Date"),value="2018-06-13",min="1951-09-19",max=Sys.time()),
+        textInput("key",h5("API Key"),value = "f28540bbe91e413c8dbb82df0636f7e9"),
+        actionButton("run", h5("Get the Headlines"))
+      ),
+      mainPanel(
+        uiOutput("links")
+      )
+    )
+  ),
+  
+  
+  server = function(input, output, session)
+  {
+    #Extract all metadata triggered by the active button
+    GetAllMetadata = eventReactive(input$run,
+    {
+      date_input = input$date
+      get_my_archive(year(as_date((date_input))),
+                     month(as_date((date_input))),
+                     day(as_date((date_input))),
+                     input$key)
+      })
+   
+    
+    state = reactiveValues(
+      observers = list()
+    )
+    
+    observeEvent(input$run, {
+      
+      # Destroy existing observers
+      for(i in seq_along(state$observers)) {
+        state$observers[[i]]$destroy()
+      }
+      
+      #Assign headlines to the links
+      ui_elems = map(
+        seq_len(nrow(GetAllMetadata())), function(i) fluidRow(actionLink(paste0("link",i),GetAllMetadata()[i,1]))
+      )
+      output$links = renderUI(fluidPage(ui_elems))
+      
+      # Reset and create new observers for each of our links
+      state$observers = map(
+        seq_len(nrow(GetAllMetadata())), 
+        function(i) {
+          label = paste0("link",i)
+          observeEvent(
+            input[[label]], 
+            { #create modal dialog
+              showModal(modalDialog(
+                tags$header(h4(GetAllMetadata()[i,1])),
+                tags$div(
+                  tags$b(paste0("Authors: ",GetAllMetadata()[i,2])),
+                  tags$br(),
+                  tags$b("Lead Paragraph"),
+                  tags$div(GetAllMetadata()[i,9]),
+                  tags$b("Press the url below to see more."),
+                  tags$br(),
+                  tags$a(href = GetAllMetadata()[i,3],as.character(GetAllMetadata()[i,3]),target="_blank"),
+                  tags$br(),
+                  tags$img(src = paste0("https://static01.nyt.com/",GetAllMetadata()[i,10]), width = "80%", height = "Auto")
+                  ),
+                easyClose = TRUE))
+              #print the presse link
+              cat("You clicked link ", i,"!\n",sep="")
+            }, 
+            ignoreInit = TRUE
+          )
+        }
+      )
+    })
+  }
+)
+```

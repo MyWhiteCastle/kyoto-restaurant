@@ -2,6 +2,7 @@
 title: "kyoto restaurant"
 output: html_document
 ---
+
 ```{r}
 pkgs = c("units","lucr","shinyWidgets","xml2","leaflet","htmltools")
 for (pkg in pkgs){
@@ -23,11 +24,17 @@ library(htmltools)
 ```
 
 Load CSV File 
+
+The dataset is downloaded from Kaggle. The raw data contains 14 features of 895 restaurants in Kyoto. The features include English and Japanese names, the nearby station, first and secondary food category which the restaurant belongs to, the price range and rating for dinner and lunch respectively, and location in longtitude and latitude.
+
 ```{r}
 Kyoto_Restaurant_raw = read.csv("Kyoto_Restaurant_Info.csv")
 ```
 
 Clean Data
+The size of the dataset is relatively small. Even though the information it contains is self-demonstrated, some cleaning is still helpful for our shiny app. 
+-We did cleaning for price range and made them into factors
+-We made other features as factors as well
 ```{r}
 #function
 ## clean function
@@ -78,95 +85,107 @@ Kyoto_Restaurant =Kyoto_Restaurant_raw %>%
     DinnerPrice = clean_price(DinnerPrice) %>% as.factor(),
     LunchPrice  = clean_price(LunchPrice) %>% addNA() %>% as.factor())
 
-leaflet() %>%
-  addTiles() %>%
-  setView(lng = 135.77, lat = 35.01, zoom = 15) %>%
-  addMarkers(lng=135.77, lat=35.01 ,popup = "CC")
 ```
 
+
+Create a Shiny App
 ```{r}
 shinyApp(
   ui = fluidPage(
     theme = shinytheme('united'),
-    titlePanel(h4("Kyoto Restaurant")),
-    sidebarLayout(
-      sidebarPanel(
-        #Select Station
-        pickerInput("station", h5("Select the station closest to your ideal restaurant"),
-                    choices = levels(Kyoto_Restaurant$Station),options = list(`actions-box` = TRUE),multiple = TRUE),
-        #Select Food Category
-        selectInput("first_category",label = h5("Select the food category"),
-                    choices = levels(Kyoto_Restaurant$FirstCategory),multiple = TRUE),
-        #Select Second Food Category
-        checkboxInput("choose_second_category","Optional: select the second food category"),
-        conditionalPanel(
-          "input.choose_second_category == true",
-          selectInput("second_category",label = h5("Select the second food cetegory"),
-                      choices = levels(Kyoto_Restaurant$SecondCategory))),
-        #Choose Dinner or Lunch
-        radioButtons("dinner_or_lunch",label =h5(NULL),choices = list("Dinner","Lunch")),
-        #Select Dinner Price
-        conditionalPanel(
-          "input.dinner_or_lunch =='Dinner'",
-          radioButtons("price_rough",label=h5("Select the Price"),
-                     choices = list("￥","￥￥", "￥￥￥", "￥￥￥￥","￥￥￥￥￥"))),
-        conditionalPanel(
-          "input.dinner_or_lunch =='Dinner' && input.price_rough == '￥'",
-          checkboxGroupInput("price_range1", label = h5("Select the price range(JPY)"),
-                             choices = levels(Kyoto_Restaurant$DinnerPrice)[1:2])),
-        conditionalPanel(
-          "input.dinner_or_lunch =='Dinner' && input.price_rough == '￥￥'",
-          checkboxGroupInput("price_range2", label = h5("Select the price range(JPY)"), 
-                             choices = levels(Kyoto_Restaurant$DinnerPrice)[c(5,7,9)])),
-        conditionalPanel(
-          "input.dinner_or_lunch =='Dinner' && input.price_rough == '￥￥￥'",
-          checkboxGroupInput("price_range3", label = h5("Select the price range(JPY)"), 
-                             choices = levels(Kyoto_Restaurant$DinnerPrice)[10:12])),
-        conditionalPanel(
-          "input.dinner_or_lunch =='Dinner' && input.price_rough == '￥￥￥￥'",
-          checkboxGroupInput("price_range4", label = h5("Select the price range(JPY)"),
-                             choices = levels(Kyoto_Restaurant$DinnerPrice)[3:4])),
-        conditionalPanel(
-          "input.dinner_or_lunch =='Dinner' && input.price_rough == '￥￥￥￥￥'",
-          checkboxGroupInput("price_range5", label = h5("Select the price range(JPY)"), 
-                             choices = levels(Kyoto_Restaurant$DinnerPrice)[c(6,8)])),
-        #Select Dinner Rating
-        conditionalPanel(
-          "input.dinner_or_lunch =='Dinner'",
-          sliderInput("dinner_rating",h5("Minimum rating"), min = as.numeric(3), max = as.numeric(4.16),value = 3.0)),
-        #Select Lunch Price
-        conditionalPanel(
-          "input.dinner_or_lunch =='Lunch'",
-          radioButtons("price_rough_lunch",label=h5("Select the Price"),
-                     choices = list("￥","￥￥", "￥￥￥", "￥￥￥￥"))),
-        conditionalPanel(
-          "input.dinner_or_lunch =='Lunch' && input.price_rough_lunch == '￥'",
-          checkboxGroupInput("price_range1_l", label = h5("Select the price range(JPY)"),
-                             choices = levels(Kyoto_Restaurant$LunchPrice)[1:2])),
-        conditionalPanel(
-          "input.dinner_or_lunch =='Lunch' && input.price_rough_lunch == '￥￥'",
-          checkboxGroupInput("price_range2_l", label = h5("Select the price range(JPY)"), 
-                             choices = levels(Kyoto_Restaurant$LunchPrice)[5:7])),
-        conditionalPanel(
-          "input.dinner_or_lunch =='Lunch' && input.price_rough_lunch == '￥￥￥'",
-          checkboxGroupInput("price_range3_l", label = h5("Select the price range(JPY)"), 
-                             choices = levels(Kyoto_Restaurant$LunchPrice)[8:10])),
-        conditionalPanel(
-          "input.dinner_or_lunch =='Lunch' && input.price_rough_lunch == '￥￥￥￥'",
-          checkboxGroupInput("price_range4_l", label = h5("Select the price range(JPY)"),
-                             choices = levels(Kyoto_Restaurant$LunchPrice)[3:4])),
-        #Select Lunch Rating
-        conditionalPanel(
-          "input.dinner_or_lunch =='Lunch'",
-          sliderInput("lunch_rating",h5("Minimum rating"), min = as.numeric(3), max = as.numeric(4.11),value = 3.0)),
-        #Add an Action Button
-        actionButton("search", h5("Search"))
-      ),
-      mainPanel(
-        leafletOutput("leaf", width = "100%", height = 240),
-        uiOutput("links"),
-        tableOutput("restaurant")
-      )
+    navbarPage(
+      "Kyoto Restaurant",
+      tabPanel(
+        "Search Restaurant",value = 'Search Restaurant',
+        fluidRow(
+          column(
+            4,
+            #Select Station
+            pickerInput("station", h5("Select the station closest to your ideal restaurant"),
+                        choices = levels(Kyoto_Restaurant$Station),options = list(`actions-box` = TRUE),multiple = TRUE),
+            #Select Food Category
+            selectInput("first_category",label = h5("Select the food category"),
+                        choices = levels(Kyoto_Restaurant$FirstCategory),multiple = TRUE),
+            #Select Second Food Category
+            checkboxInput("choose_second_category","Optional: select the second food category"),
+            conditionalPanel(
+              "input.choose_second_category == true",
+              selectInput("second_category",label = h5("Select the second food cetegory"),
+                          choices = levels(Kyoto_Restaurant$SecondCategory))),
+            #Choose Dinner or Lunch
+            radioButtons("dinner_or_lunch",label =h5(NULL),choices = list("Dinner","Lunch")),
+            #Select Dinner Price
+            conditionalPanel(
+              "input.dinner_or_lunch =='Dinner'",
+              radioButtons("price_rough",label=h5("Select the Price"),
+                         choices = list("￥","￥￥", "￥￥￥", "￥￥￥￥","￥￥￥￥￥"))),
+            conditionalPanel(
+              "input.dinner_or_lunch =='Dinner' && input.price_rough == '￥'",
+              checkboxGroupInput("price_range1", label = h5("Select the price range(JPY)"),
+                                 choices = levels(Kyoto_Restaurant$DinnerPrice)[1:2])),
+            conditionalPanel(
+              "input.dinner_or_lunch =='Dinner' && input.price_rough == '￥￥'",
+              checkboxGroupInput("price_range2", label = h5("Select the price range(JPY)"), 
+                                 choices = levels(Kyoto_Restaurant$DinnerPrice)[c(5,7,9)])),
+            conditionalPanel(
+              "input.dinner_or_lunch =='Dinner' && input.price_rough == '￥￥￥'",
+              checkboxGroupInput("price_range3", label = h5("Select the price range(JPY)"), 
+                                 choices = levels(Kyoto_Restaurant$DinnerPrice)[10:12])),
+            conditionalPanel(
+              "input.dinner_or_lunch =='Dinner' && input.price_rough == '￥￥￥￥'",
+              checkboxGroupInput("price_range4", label = h5("Select the price range(JPY)"),
+                                 choices = levels(Kyoto_Restaurant$DinnerPrice)[3:4])),
+            conditionalPanel(
+              "input.dinner_or_lunch =='Dinner' && input.price_rough == '￥￥￥￥￥'",
+              checkboxGroupInput("price_range5", label = h5("Select the price range(JPY)"), 
+                                 choices = levels(Kyoto_Restaurant$DinnerPrice)[c(6,8)])),
+            #Select Dinner Rating
+            conditionalPanel(
+              "input.dinner_or_lunch =='Dinner'",
+              sliderInput("dinner_rating",h5("Minimum rating"), min = as.numeric(3), max = as.numeric(4.16),value = 3.0)),
+            #Select Lunch Price
+            conditionalPanel(
+              "input.dinner_or_lunch =='Lunch'",
+              radioButtons("price_rough_lunch",label=h5("Select the Price"),
+                         choices = list("￥","￥￥", "￥￥￥", "￥￥￥￥"))),
+            conditionalPanel(
+              "input.dinner_or_lunch =='Lunch' && input.price_rough_lunch == '￥'",
+              checkboxGroupInput("price_range1_l", label = h5("Select the price range(JPY)"),
+                                 choices = levels(Kyoto_Restaurant$LunchPrice)[1:2])),
+            conditionalPanel(
+              "input.dinner_or_lunch =='Lunch' && input.price_rough_lunch == '￥￥'",
+              checkboxGroupInput("price_range2_l", label = h5("Select the price range(JPY)"), 
+                                 choices = levels(Kyoto_Restaurant$LunchPrice)[5:7])),
+            conditionalPanel(
+              "input.dinner_or_lunch =='Lunch' && input.price_rough_lunch == '￥￥￥'",
+              checkboxGroupInput("price_range3_l", label = h5("Select the price range(JPY)"), 
+                                 choices = levels(Kyoto_Restaurant$LunchPrice)[8:10])),
+            conditionalPanel(
+              "input.dinner_or_lunch =='Lunch' && input.price_rough_lunch == '￥￥￥￥'",
+              checkboxGroupInput("price_range4_l", label = h5("Select the price range(JPY)"),
+                                 choices = levels(Kyoto_Restaurant$LunchPrice)[3:4])),
+            #Select Lunch Rating
+            conditionalPanel(
+              "input.dinner_or_lunch =='Lunch'",
+              sliderInput("lunch_rating",h5("Minimum rating"), min = as.numeric(3), max = as.numeric(4.11),value = 3.0)),
+            #Add an Action Button
+            actionButton("search", h5("Search"))),
+          column(
+            8,
+            leafletOutput("leaf", width = "100%", height = 240),
+            uiOutput("links"),
+            tableOutput("restaurant")))
+    ),
+    tabPanel(
+      "Graph", value = "Graph",
+      fluidRow(
+        column(2),
+        column(
+          10,
+          plotOutput("price")),
+        column(2)))
+    
+    #
     )
   ),
   
@@ -249,8 +268,7 @@ shinyApp(
         addTiles() %>%
         addMarkers(~Long, ~Lat, popup = paste(restaurants()$JapaneseName, "<br>",
                                               restaurants()$Name, "<br>",
-                                              "Nearby Station:",restaurants()$Station, "<br>",
-                                              "Details"))})
+                                              "Nearby Station:",restaurants()$Station))})
     
     state = reactiveValues(
       observers = list()
@@ -298,6 +316,21 @@ shinyApp(
     output$restaurant = renderTable({
       output_restaurants = restaurants() %>% 
         select(Name,JapaneseName,DinnerPrice,LunchPrice)
+      })
+    
+    #use graph to show the restaurants number of different kinds
+    output$price = renderPlot({
+        Kyoto_Restaurant_rating = Kyoto_Restaurant_raw %>%
+        group_by(FirstCategory) %>%
+        summarise(count = n()) %>%
+        arrange(desc(count))
+        
+        price = Kyoto_Restaurant_rating
+        ggplot(price,aes(x = FirstCategory, y = count )) +
+          geom_point(alpha = 0.5) +
+          theme_bw() +
+          ggtitle("Number of different restaurant") +
+          theme(axis.text.x=element_text(angle = 45, hjust = 1))
       })
   }
 )
